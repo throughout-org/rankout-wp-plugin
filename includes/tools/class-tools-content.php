@@ -1,0 +1,256 @@
+<?php
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
+/**
+ * wp_get_post / wp_get_page / wp_update_post / wp_update_page /
+ * wp_get_post_meta / wp_update_post_meta — the exact tool names
+ * implementation.service.ts's validationReadFor() map references, and
+ * the ones a RankOut implementation proposal actually mutates content
+ * through. Also wp_find_post: implementation.service.ts's own system
+ * prompt already assumes a "locate this page by its slug or URL" tool
+ * exists ("If the task gives a targetUrl, locate that exact page first
+ * ... instead of browsing the site") — every other tool here needs a
+ * post_id up front, so without this one nothing could ever resolve a
+ * task's targetUrl to an id in the first place.
+ */
+class RankOut_Connector_Tools_Content {
+
+	public static function register() {
+		add_action( 'rankout_connector_register_tools', array( __CLASS__, 'register_tools' ) );
+	}
+
+	public static function register_tools() {
+		$post_id_schema = array(
+			'type'       => 'object',
+			'properties' => array( 'post_id' => array( 'type' => 'integer' ) ),
+			'required'   => array( 'post_id' ),
+		);
+
+		RankOut_Connector_Tool_Registry::register(
+			'wp_find_post',
+			'Resolve a live front-end URL (e.g. https://example.com/blog/) to its post/page id, type, and title. Works for the site\'s posts-page/blog index too, not just individual posts.',
+			array(
+				'type'       => 'object',
+				'properties' => array( 'url' => array( 'type' => 'string' ) ),
+				'required'   => array( 'url' ),
+			),
+			true,
+			'mcp:posts:read',
+			array( __CLASS__, 'find_post' )
+		);
+
+		RankOut_Connector_Tool_Registry::register(
+			'wp_get_post',
+			'Get one post\'s current title, content, excerpt, status, and slug by id.',
+			$post_id_schema,
+			true,
+			'mcp:posts:read',
+			function ( array $args ) {
+				return self::get_content( (int) ( $args['post_id'] ?? 0 ), 'post' );
+			}
+		);
+
+		RankOut_Connector_Tool_Registry::register(
+			'wp_get_page',
+			'Get one page\'s current title, content, excerpt, status, and slug by id.',
+			$post_id_schema,
+			true,
+			'mcp:posts:read',
+			function ( array $args ) {
+				return self::get_content( (int) ( $args['post_id'] ?? 0 ), 'page' );
+			}
+		);
+
+		$update_schema = array(
+			'type'       => 'object',
+			'properties' => array(
+				'post_id' => array( 'type' => 'integer' ),
+				'title'   => array( 'type' => 'string' ),
+				'content' => array( 'type' => 'string' ),
+				'excerpt' => array( 'type' => 'string' ),
+			),
+			'required'   => array( 'post_id' ),
+		);
+
+		RankOut_Connector_Tool_Registry::register(
+			'wp_update_post',
+			'Update one post\'s title, content, and/or excerpt. Only the fields provided are changed.',
+			$update_schema,
+			false,
+			'mcp:posts:write',
+			function ( array $args ) {
+				return self::update_content( $args, 'post' );
+			}
+		);
+
+		RankOut_Connector_Tool_Registry::register(
+			'wp_update_page',
+			'Update one page\'s title, content, and/or excerpt. Only the fields provided are changed.',
+			$update_schema,
+			false,
+			'mcp:posts:write',
+			function ( array $args ) {
+				return self::update_content( $args, 'page' );
+			}
+		);
+
+		RankOut_Connector_Tool_Registry::register(
+			'wp_get_post_meta',
+			'Get a post\'s public custom fields (protected/internal meta keys starting with "_" are never exposed here).',
+			$post_id_schema,
+			true,
+			'mcp:posts:read',
+			array( __CLASS__, 'get_post_meta' )
+		);
+
+		RankOut_Connector_Tool_Registry::register(
+			'wp_update_post_meta',
+			'Set one or more of a post\'s public custom fields. Protected/internal meta keys (starting with "_") are refused — use the dedicated SEO tools for SEO plugin fields.',
+			array(
+				'type'       => 'object',
+				'properties' => array(
+					'post_id' => array( 'type' => 'integer' ),
+					'meta'    => array( 'type' => 'object' ),
+				),
+				'required'   => array( 'post_id', 'meta' ),
+			),
+			false,
+			'mcp:posts:write',
+			array( __CLASS__, 'update_post_meta' )
+		);
+	}
+
+	public static function find_post( array $args ) {
+		$url = isset( $args['url'] ) ? trim( (string) $args['url'] ) : '';
+		if ( '' === $url ) {
+			throw new RuntimeException( 'url is required.' );
+		}
+		// url_to_postid() is WordPress core's own front-end-URL → post ID
+		// resolver — it already understands custom permalink structures
+		// and, importantly, a static page assigned as the site's "Posts
+		// page" under Settings → Reading, which is exactly what a /blog/
+		// index commonly is. It's also strict about the URL's scheme/host
+		// matching this site's configured home_url() exactly — a www vs
+		// non-www or http vs https mismatch between what RankOut was given
+		// and how this site is actually configured is enough to make it
+		// return 0 even though the page is real, so retry once against the
+		// same path rebuilt onto this site's own home_url().
+		$post_id = url_to_postid( $url );
+		if ( ! $post_id ) {
+			$normalized = self::normalize_to_home_url( $url );
+			if ( $normalized && $normalized !== $url ) {
+				$post_id = url_to_postid( $normalized );
+			}
+		}
+		if ( ! $post_id ) {
+			throw new RuntimeException( sprintf( 'No post or page found for "%s".', $url ) );
+		}
+		$post = get_post( $post_id );
+		return array(
+			'post_id'   => $post->ID,
+			'post_type' => $post->post_type,
+			'title'     => get_the_title( $post ),
+			'slug'      => $post->post_name,
+			'link'      => get_permalink( $post ),
+		);
+	}
+
+	private static function normalize_to_home_url( $url ) {
+		$home  = wp_parse_url( home_url( '/' ) );
+		$given = wp_parse_url( $url );
+		if ( ! $home || ! $given || empty( $home['host'] ) || empty( $given['path'] ) ) {
+			return null;
+		}
+		$rebuilt = ( $home['scheme'] ?? 'https' ) . '://' . $home['host'] . $given['path'];
+		if ( ! empty( $given['query'] ) ) {
+			$rebuilt .= '?' . $given['query'];
+		}
+		return $rebuilt;
+	}
+
+	private static function require_post( $post_id, $expected_type ) {
+		$post = get_post( $post_id );
+		if ( ! $post ) {
+			throw new RuntimeException( sprintf( 'No post found with id %d.', $post_id ) );
+		}
+		if ( $post->post_type !== $expected_type ) {
+			throw new RuntimeException( sprintf( 'Post %d is a "%s", not a "%s".', $post_id, $post->post_type, $expected_type ) );
+		}
+		return $post;
+	}
+
+	private static function get_content( $post_id, $expected_type ) {
+		$post = self::require_post( $post_id, $expected_type );
+		return array(
+			'post_id' => $post->ID,
+			'title'   => get_the_title( $post ),
+			'content' => $post->post_content,
+			'excerpt' => $post->post_excerpt,
+			'status'  => $post->post_status,
+			'slug'    => $post->post_name,
+			'link'    => get_permalink( $post ),
+			'modified' => mysql2date( 'c', $post->post_modified_gmt, false ),
+		);
+	}
+
+	private static function update_content( array $args, $expected_type ) {
+		$post_id = (int) ( $args['post_id'] ?? 0 );
+		self::require_post( $post_id, $expected_type );
+
+		$update = array( 'ID' => $post_id );
+		foreach ( array( 'title' => 'post_title', 'content' => 'post_content', 'excerpt' => 'post_excerpt' ) as $arg_key => $field ) {
+			if ( array_key_exists( $arg_key, $args ) ) {
+				$update[ $field ] = (string) $args[ $arg_key ];
+			}
+		}
+		if ( count( $update ) === 1 ) {
+			throw new RuntimeException( 'Provide at least one of title, content, or excerpt to update.' );
+		}
+
+		$result = wp_update_post( $update, true );
+		if ( is_wp_error( $result ) ) {
+			throw new RuntimeException( $result->get_error_message() );
+		}
+		return self::get_content( $post_id, $expected_type );
+	}
+
+	public static function get_post_meta( array $args ) {
+		$post_id = (int) ( $args['post_id'] ?? 0 );
+		if ( ! get_post( $post_id ) ) {
+			throw new RuntimeException( sprintf( 'No post found with id %d.', $post_id ) );
+		}
+		$all  = get_post_meta( $post_id );
+		$meta = array();
+		foreach ( $all as $key => $values ) {
+			if ( is_protected_meta( $key, 'post' ) ) {
+				continue;
+			}
+			$meta[ $key ] = count( $values ) === 1 ? maybe_unserialize( $values[0] ) : array_map( 'maybe_unserialize', $values );
+		}
+		return array( 'post_id' => $post_id, 'meta' => $meta );
+	}
+
+	public static function update_post_meta( array $args ) {
+		$post_id = (int) ( $args['post_id'] ?? 0 );
+		$meta    = isset( $args['meta'] ) && is_array( $args['meta'] ) ? $args['meta'] : array();
+		if ( ! get_post( $post_id ) ) {
+			throw new RuntimeException( sprintf( 'No post found with id %d.', $post_id ) );
+		}
+		if ( empty( $meta ) ) {
+			throw new RuntimeException( 'meta must contain at least one key/value pair.' );
+		}
+		foreach ( $meta as $key => $value ) {
+			if ( is_protected_meta( $key, 'post' ) ) {
+				throw new RuntimeException( sprintf( '"%s" is a protected meta key and cannot be set through this tool.', $key ) );
+			}
+		}
+		foreach ( $meta as $key => $value ) {
+			update_post_meta( $post_id, $key, $value );
+		}
+		return self::get_post_meta( array( 'post_id' => $post_id ) );
+	}
+}
+
+RankOut_Connector_Tools_Content::register();
