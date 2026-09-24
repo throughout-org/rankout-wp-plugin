@@ -166,7 +166,7 @@ class RankOut_Connector_Tools_Content {
 		return array(
 			'post_id'   => $post->ID,
 			'post_type' => $post->post_type,
-			'title'     => get_the_title( $post ),
+			'title'     => $post->post_title,
 			'slug'      => $post->post_name,
 			'link'      => get_permalink( $post ),
 		);
@@ -200,7 +200,17 @@ class RankOut_Connector_Tools_Content {
 		$post = self::require_post( $post_id, $expected_type );
 		return array(
 			'post_id' => $post->ID,
-			'title'   => get_the_title( $post ),
+			// The raw stored value, deliberately NOT get_the_title() — that
+			// applies the `the_title` filter chain (wptexturize() etc.),
+			// which rewrites e.g. a plain " - " into an HTML-entity en dash
+			// and "&" into "&amp;". wp_update_post() writes the raw string,
+			// so reading back the filtered version makes RankOut's own
+			// post-write validation spuriously fail on any title containing
+			// those characters, even though the write genuinely succeeded
+			// (found live: title "...Home - Airmate" read back as
+			// "...Home &#8211; Airmate", flagged FAILED for a write that
+			// was actually correct).
+			'title'   => $post->post_title,
 			'content' => $post->post_content,
 			'excerpt' => $post->post_excerpt,
 			'status'  => $post->post_status,
