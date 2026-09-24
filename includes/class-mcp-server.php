@@ -155,8 +155,10 @@ class RankOut_Connector_MCP_Server {
 		}
 
 		$before_snapshot = null;
+		$pre_write_revision_id = null;
 		if ( ! $tool['read_only'] ) {
 			$before_snapshot = RankOut_Connector_Tools_History::capture_snapshot( $name, $args );
+			$pre_write_revision_id = RankOut_Connector_Tools_History::capture_pre_write_revision( $name, $args );
 		}
 
 		try {
@@ -166,7 +168,7 @@ class RankOut_Connector_MCP_Server {
 		}
 
 		if ( ! $tool['read_only'] ) {
-			RankOut_Connector_Tools_History::record( $name, $args, $before_snapshot, $result, (int) $token_row['wp_user_id'] );
+			RankOut_Connector_Tools_History::record( $name, $args, $before_snapshot, $result, (int) $token_row['wp_user_id'], $pre_write_revision_id );
 		}
 
 		return array(

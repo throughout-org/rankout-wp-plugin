@@ -205,23 +205,38 @@ class RankOut_Connector_Tools_History {
 	}
 
 	/**
+	 * Called by class-mcp-server.php BEFORE a content-write tool's
+	 * handler runs. WordPress only creates a post revision as a side
+	 * effect of wp_update_post() itself, and — confirmed empirically,
+	 * not assumed — that automatic revision snapshots the POST-write
+	 * content, not the pre-write content: restoring "the newest revision
+	 * right after this write" is a silent no-op, since it just restores
+	 * the same content the write had just set. Explicitly saving a
+	 * revision of the CURRENT (about-to-be-overwritten) content here,
+	 * before the write runs, is the only reliable restore point for
+	 * undoing this specific write.
+	 */
+	public static function capture_pre_write_revision( $tool_name, array $args ) {
+		if ( ! in_array( $tool_name, array( 'wp_update_post', 'wp_update_page' ), true ) || empty( $args['post_id'] ) ) {
+			return null;
+		}
+		$revision_id = wp_save_post_revision( (int) $args['post_id'] );
+		return ( $revision_id && ! is_wp_error( $revision_id ) ) ? (int) $revision_id : null;
+	}
+
+	/**
 	 * Called by class-mcp-server.php AFTER a write tool's handler
 	 * succeeds. Captures the "after" state the same way as the "before"
-	 * snapshot, and — only for wp_update_post/wp_update_page — resolves
-	 * the WordPress core revision WordPress itself just saved for this
-	 * edit, so wp_restore_revision has something real to restore.
+	 * snapshot. $pre_write_revision_id comes from
+	 * capture_pre_write_revision(), called before the write ran — see
+	 * that method for why this can't be resolved after the fact.
 	 */
-	public static function record( $tool_name, array $args, array $before_snapshot, array $write_result, $wp_user_id ) {
+	public static function record( $tool_name, array $args, array $before_snapshot, array $write_result, $wp_user_id, $pre_write_revision_id = null ) {
 		if ( empty( $args['post_id'] ) ) {
 			return;
 		}
 		$after_snapshot = self::capture_snapshot( $tool_name, $args );
-		$revision_id    = null;
-
-		if ( in_array( $tool_name, array( 'wp_update_post', 'wp_update_page' ), true ) ) {
-			$revisions = wp_get_post_revisions( (int) $args['post_id'], array( 'posts_per_page' => 1, 'fields' => 'ids' ) );
-			$revision_id = ! empty( $revisions ) ? (int) reset( $revisions ) : null;
-		}
+		$revision_id    = $pre_write_revision_id;
 
 		global $wpdb;
 		$wpdb->insert(
