@@ -127,18 +127,33 @@ class RankOut_Connector_Tools_Content {
 		if ( '' === $url ) {
 			throw new RuntimeException( 'url is required.' );
 		}
-		// url_to_postid() is WordPress core's own front-end-URL → post ID
-		// resolver — it already understands custom permalink structures
-		// and, importantly, a static page assigned as the site's "Posts
-		// page" under Settings → Reading, which is exactly what a /blog/
-		// index commonly is. It's also strict about the URL's scheme/host
-		// matching this site's configured home_url() exactly — a www vs
-		// non-www or http vs https mismatch between what RankOut was given
-		// and how this site is actually configured is enough to make it
-		// return 0 even though the page is real, so retry once against the
-		// same path rebuilt onto this site's own home_url().
-		$post_id = url_to_postid( $url );
+		// WordPress core's url_to_postid() has a documented blind spot: the
+		// static page assigned as Settings → Reading → "Posts page" (very
+		// commonly a /blog/ index) parses to the blog ARCHIVE query, not a
+		// singular post/page match, so it returns 0 even though the page
+		// is completely real — check that specific case explicitly first,
+		// by comparing paths rather than full URLs so it's also immune to
+		// any scheme/host mismatch between what RankOut was given and how
+		// this site is actually configured.
+		$given_path = untrailingslashit( (string) wp_parse_url( $url, PHP_URL_PATH ) );
+		$post_id    = 0;
+
+		$posts_page_id = (int) get_option( 'page_for_posts' );
+		if ( $posts_page_id && '' !== $given_path ) {
+			$posts_page_path = untrailingslashit( (string) wp_parse_url( get_permalink( $posts_page_id ), PHP_URL_PATH ) );
+			if ( $given_path === $posts_page_path ) {
+				$post_id = $posts_page_id;
+			}
+		}
+
 		if ( ! $post_id ) {
+			$post_id = url_to_postid( $url );
+		}
+		if ( ! $post_id ) {
+			// A www vs non-www or http vs https mismatch between the given
+			// URL and this site's configured home_url() is separately
+			// enough to make url_to_postid() return 0 — retry once against
+			// the same path rebuilt onto this site's own home_url().
 			$normalized = self::normalize_to_home_url( $url );
 			if ( $normalized && $normalized !== $url ) {
 				$post_id = url_to_postid( $normalized );

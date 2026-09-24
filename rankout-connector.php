@@ -3,7 +3,7 @@
  * Plugin Name:       RankOut Connector
  * Plugin URI:         https://rankout.app
  * Description:        Connects this WordPress site to RankOut so approved SEO/AEO/GEO fixes can be reviewed and applied automatically. Exposes an OAuth 2.1 + PKCE authorization server and an MCP tool endpoint scoped to exactly what RankOut is granted.
- * Version:             1.0.0
+ * Version:             1.0.1
  * Requires at least:  6.0
  * Requires PHP:        7.4
  * Author:              RankOut
@@ -39,7 +39,7 @@ if ( isset( $_SERVER['REQUEST_URI'] ) && (
 	}
 }
 
-define( 'RANKOUT_CONNECTOR_VERSION', '1.0.0' );
+define( 'RANKOUT_CONNECTOR_VERSION', '1.0.1' );
 define( 'RANKOUT_CONNECTOR_FILE', __FILE__ );
 define( 'RANKOUT_CONNECTOR_DIR', plugin_dir_path( __FILE__ ) );
 // The fixed REST namespace every discovery document, OAuth endpoint, and
