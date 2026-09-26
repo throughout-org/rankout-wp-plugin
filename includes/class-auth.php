@@ -57,11 +57,22 @@ class RankOut_Connector_Auth {
 		if ( strtotime( $row['access_expires_at'] . ' UTC' ) < time() ) {
 			return new WP_Error( 'rankout_connector_expired_token', 'This access token has expired. Refresh it.', array( 'status' => 401 ) );
 		}
-		if ( ! get_userdata( (int) $row['wp_user_id'] ) ) {
-			return new WP_Error( 'rankout_connector_invalid_token', 'The WordPress user that authorized this connection no longer exists.', array( 'status' => 401 ) );
+		$user_error = self::authorize_token_user( (int) $row['wp_user_id'] );
+		if ( is_wp_error( $user_error ) ) {
+			return $user_error;
 		}
 
 		$row['scope'] = RankOut_Connector_Scopes::parse( $row['scope'] );
 		return $row;
+	}
+
+	public static function authorize_token_user( $wp_user_id ) {
+		if ( ! get_userdata( $wp_user_id ) ) {
+			return new WP_Error( 'rankout_connector_invalid_token', 'The WordPress user that authorized this connection no longer exists.', array( 'status' => 401 ) );
+		}
+		if ( ! user_can( $wp_user_id, 'manage_options' ) ) {
+			return new WP_Error( 'rankout_connector_permission_revoked', 'The WordPress user that authorized this connection is no longer a site administrator. Reconnect RankOut with a current administrator.', array( 'status' => 403 ) );
+		}
+		return true;
 	}
 }

@@ -112,7 +112,7 @@ class RankOut_Connector_Tools_Content {
 				'type'       => 'object',
 				'properties' => array(
 					'post_id' => array( 'type' => 'integer' ),
-					'meta'    => array( 'type' => 'object' ),
+					'meta'    => array( 'type' => 'object', 'additionalProperties' => true ),
 				),
 				'required'   => array( 'post_id', 'meta' ),
 			),
@@ -238,14 +238,39 @@ class RankOut_Connector_Tools_Content {
 		if ( is_wp_error( $result ) ) {
 			throw new RuntimeException( $result->get_error_message() );
 		}
-		return self::get_content( $post_id, $expected_type );
+		$read_back = self::get_content( $post_id, $expected_type );
+		foreach ( array( 'title', 'content', 'excerpt' ) as $field ) {
+			if ( array_key_exists( $field, $args ) && (string) $args[ $field ] !== $read_back[ $field ] ) {
+				throw new RuntimeException( sprintf( 'WordPress did not persist the requested %s value.', $field ) );
+			}
+		}
+		return $read_back;
+	}
+
+	private static function require_meta_object( $post_id ) {
+		$post = get_post( $post_id );
+		if ( ! $post ) {
+			throw new RuntimeException( sprintf( 'No post found with id %d.', $post_id ) );
+		}
+		if ( ! in_array( $post->post_type, array( 'post', 'page' ), true ) ) {
+			throw new RuntimeException( 'Generic metadata is limited to WordPress posts and pages; use a dedicated integration for other object types.' );
+		}
+		return $post;
+	}
+
+	private static function allowed_meta_keys() {
+		$keys = array();
+		if ( defined( 'RANKOUT_CONNECTOR_ALLOWED_PUBLIC_META_KEYS' ) ) {
+			$keys = is_array( RANKOUT_CONNECTOR_ALLOWED_PUBLIC_META_KEYS )
+				? RANKOUT_CONNECTOR_ALLOWED_PUBLIC_META_KEYS
+				: preg_split( '/[\s,]+/', (string) RANKOUT_CONNECTOR_ALLOWED_PUBLIC_META_KEYS, -1, PREG_SPLIT_NO_EMPTY );
+		}
+		return array_values( array_unique( array_map( 'sanitize_key', (array) apply_filters( 'rankout_connector_allowed_public_meta_keys', $keys ) ) ) );
 	}
 
 	public static function get_post_meta( array $args ) {
 		$post_id = (int) ( $args['post_id'] ?? 0 );
-		if ( ! get_post( $post_id ) ) {
-			throw new RuntimeException( sprintf( 'No post found with id %d.', $post_id ) );
-		}
+		self::require_meta_object( $post_id );
 		$all  = get_post_meta( $post_id );
 		$meta = array();
 		foreach ( $all as $key => $values ) {
@@ -260,21 +285,29 @@ class RankOut_Connector_Tools_Content {
 	public static function update_post_meta( array $args ) {
 		$post_id = (int) ( $args['post_id'] ?? 0 );
 		$meta    = isset( $args['meta'] ) && is_array( $args['meta'] ) ? $args['meta'] : array();
-		if ( ! get_post( $post_id ) ) {
-			throw new RuntimeException( sprintf( 'No post found with id %d.', $post_id ) );
-		}
+		self::require_meta_object( $post_id );
 		if ( empty( $meta ) ) {
 			throw new RuntimeException( 'meta must contain at least one key/value pair.' );
 		}
+		$allowed = self::allowed_meta_keys();
 		foreach ( $meta as $key => $value ) {
 			if ( is_protected_meta( $key, 'post' ) ) {
 				throw new RuntimeException( sprintf( '"%s" is a protected meta key and cannot be set through this tool.', $key ) );
+			}
+			if ( ! in_array( $key, $allowed, true ) ) {
+				throw new RuntimeException( sprintf( '"%s" is not in this site\'s RankOut public-meta allowlist.', $key ) );
 			}
 		}
 		foreach ( $meta as $key => $value ) {
 			update_post_meta( $post_id, $key, $value );
 		}
-		return self::get_post_meta( array( 'post_id' => $post_id ) );
+		$read_back = self::get_post_meta( array( 'post_id' => $post_id ) );
+		foreach ( $meta as $key => $value ) {
+			if ( ! array_key_exists( $key, $read_back['meta'] ) || wp_json_encode( $read_back['meta'][ $key ] ) !== wp_json_encode( $value ) ) {
+				throw new RuntimeException( sprintf( 'WordPress did not persist metadata key "%s".', $key ) );
+			}
+		}
+		return $read_back;
 	}
 }
 

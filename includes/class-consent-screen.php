@@ -53,26 +53,19 @@ class RankOut_Connector_Consent_Screen {
 		);
 	}
 
-	private static function validate_params( array $params ) {
+	public static function validate_params( array $params ) {
 		if ( RANKOUT_CONNECTOR_CLIENT_ID !== $params['client_id'] ) {
 			return 'Unknown client_id. This authorization link was not issued for this site\'s RankOut Connector.';
 		}
 		if ( 'code' !== $params['response_type'] ) {
 			return 'Unsupported response_type — only "code" is supported.';
 		}
-		// Deliberately NOT wp_http_validate_url() — that function is WordPress's
-		// outbound-request SSRF guard and rejects localhost/private hosts and
-		// non-standard ports on purpose. redirect_uri here is never fetched by
-		// this server; it's only handed to the admin's own browser in a 302,
-		// and RankOut's backend (the thing actually listening on it) is
-		// legitimately on a different host/port than this WordPress site —
-		// including localhost during development. The real protection against
-		// an attacker-supplied redirect_uri is the exact-match check against
-		// the value stored with the authorization code at token-exchange time
-		// (see class-oauth-server.php), not a same-origin/allowlist check here.
 		$parsed_redirect = wp_parse_url( $params['redirect_uri'] );
 		if ( '' === $params['redirect_uri'] || ! is_array( $parsed_redirect ) || empty( $parsed_redirect['host'] ) || ! in_array( strtolower( $parsed_redirect['scheme'] ?? '' ), array( 'http', 'https' ), true ) ) {
 			return 'Missing or invalid redirect_uri.';
+		}
+		if ( ! in_array( $params['redirect_uri'], self::allowed_redirect_uris(), true ) ) {
+			return 'The redirect_uri is not registered for RankOut Connector.';
 		}
 		if ( 'S256' !== $params['code_challenge_method'] || '' === $params['code_challenge'] ) {
 			return 'This request is missing required PKCE parameters (code_challenge_method=S256).';
@@ -81,6 +74,19 @@ class RankOut_Connector_Consent_Screen {
 			return 'Missing state parameter.';
 		}
 		return '';
+	}
+
+	/** Exact-match OAuth callback allowlist; override explicitly for staging/local. */
+	public static function allowed_redirect_uris() {
+		$uris = array( 'https://api.rankout.app/api/wordpress-connector/callback' );
+		if ( defined( 'RANKOUT_CONNECTOR_ALLOWED_REDIRECT_URIS' ) ) {
+			$configured = is_array( RANKOUT_CONNECTOR_ALLOWED_REDIRECT_URIS )
+				? RANKOUT_CONNECTOR_ALLOWED_REDIRECT_URIS
+				: preg_split( '/[\s,]+/', (string) RANKOUT_CONNECTOR_ALLOWED_REDIRECT_URIS, -1, PREG_SPLIT_NO_EMPTY );
+			$uris = array_merge( $uris, $configured );
+		}
+		$uris = apply_filters( 'rankout_connector_allowed_redirect_uris', $uris );
+		return array_values( array_unique( array_filter( array_map( 'esc_url_raw', (array) $uris ) ) ) );
 	}
 
 	private static function handle_decision( array $params, $error ) {

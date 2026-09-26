@@ -115,6 +115,24 @@ class RankOut_Connector_Tools_SEO {
 		}
 	}
 
+	private static function require_update_fields( array $args, array $supported ) {
+		foreach ( $supported as $field ) {
+			if ( array_key_exists( $field, $args ) ) {
+				return;
+			}
+		}
+		throw new RuntimeException( 'Provide at least one supported SEO field to update.' );
+	}
+
+	private static function verify_update( array $args, array $read_back, array $supported ) {
+		foreach ( $supported as $field ) {
+			if ( array_key_exists( $field, $args ) && wp_json_encode( $args[ $field ] ) !== wp_json_encode( $read_back[ $field ] ?? null ) ) {
+				throw new RuntimeException( sprintf( 'The SEO integration did not persist the requested %s value.', $field ) );
+			}
+		}
+		return $read_back;
+	}
+
 	// --- Yoast SEO: standard postmeta keys, unchanged since Yoast 1.x ---
 
 	public static function yoast_get( array $args ) {
@@ -134,6 +152,8 @@ class RankOut_Connector_Tools_SEO {
 	public static function yoast_update( array $args ) {
 		$post_id = (int) ( $args['post_id'] ?? 0 );
 		self::require_post( $post_id );
+		$supported = array( 'title', 'description', 'focus_keyword', 'canonical_url', 'noindex', 'nofollow' );
+		self::require_update_fields( $args, $supported );
 		$map = array(
 			'title'         => '_yoast_wpseo_title',
 			'description'   => '_yoast_wpseo_metadesc',
@@ -151,7 +171,7 @@ class RankOut_Connector_Tools_SEO {
 		if ( array_key_exists( 'nofollow', $args ) ) {
 			update_post_meta( $post_id, '_yoast_wpseo_meta-robots-nofollow', $args['nofollow'] ? '1' : '0' );
 		}
-		return self::yoast_get( array( 'post_id' => $post_id ) );
+		return self::verify_update( $args, self::yoast_get( array( 'post_id' => $post_id ) ), $supported );
 	}
 
 	// --- Rank Math: standard postmeta keys, stable since Rank Math 1.x ---
@@ -175,6 +195,8 @@ class RankOut_Connector_Tools_SEO {
 	public static function rankmath_update( array $args ) {
 		$post_id = (int) ( $args['post_id'] ?? 0 );
 		self::require_post( $post_id );
+		$supported = array( 'title', 'description', 'focus_keyword', 'canonical_url', 'noindex', 'nofollow' );
+		self::require_update_fields( $args, $supported );
 		$map = array(
 			'title'         => 'rank_math_title',
 			'description'   => 'rank_math_description',
@@ -199,7 +221,7 @@ class RankOut_Connector_Tools_SEO {
 			}
 			update_post_meta( $post_id, 'rank_math_robots', $robots );
 		}
-		return self::rankmath_get( array( 'post_id' => $post_id ) );
+		return self::verify_update( $args, self::rankmath_get( array( 'post_id' => $post_id ) ), $supported );
 	}
 
 	// --- All in One SEO v4: dedicated aioseo_posts table, not postmeta ---
@@ -228,6 +250,8 @@ class RankOut_Connector_Tools_SEO {
 		global $wpdb;
 		$post_id = (int) ( $args['post_id'] ?? 0 );
 		self::require_post( $post_id );
+		$supported = array( 'title', 'description', 'canonical_url', 'noindex', 'nofollow' );
+		self::require_update_fields( $args, $supported );
 		$table = $wpdb->prefix . 'aioseo_posts';
 
 		$existing = self::aioseo_row( $post_id );
@@ -263,7 +287,7 @@ class RankOut_Connector_Tools_SEO {
 		if ( $wpdb->last_error ) {
 			throw new RuntimeException( 'All in One SEO table write failed: ' . $wpdb->last_error . ' — verify the aioseo_posts schema for your installed AIOSEO version.' );
 		}
-		return self::aioseo_get( array( 'post_id' => $post_id ) );
+		return self::verify_update( $args, self::aioseo_get( array( 'post_id' => $post_id ) ), $supported );
 	}
 }
 

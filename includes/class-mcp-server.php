@@ -153,6 +153,14 @@ class RankOut_Connector_MCP_Server {
 		if ( ! RankOut_Connector_Scopes::grants( $token_row['scope'], $tool['required_scope'] ) ) {
 			return self::tool_error( sprintf( 'This connection was not granted the "%s" permission required by "%s".', $tool['required_scope'], $name ) );
 		}
+		$schema_error = RankOut_Connector_Schema_Validator::validate( $args, $tool['input_schema'] );
+		if ( $schema_error ) {
+			return self::tool_error( 'Invalid arguments: ' . $schema_error );
+		}
+		$capability_error = self::authorize_object( $name, $args, $tool, (int) $token_row['wp_user_id'] );
+		if ( $capability_error ) {
+			return self::tool_error( $capability_error );
+		}
 
 		$before_snapshot = null;
 		$pre_write_revision_id = null;
@@ -163,7 +171,7 @@ class RankOut_Connector_MCP_Server {
 
 		try {
 			$result = call_user_func( $tool['handler'], $args, (int) $token_row['wp_user_id'] );
-		} catch ( Exception $exception ) {
+		} catch ( Throwable $exception ) {
 			return self::tool_error( $exception->getMessage() );
 		}
 
@@ -175,6 +183,18 @@ class RankOut_Connector_MCP_Server {
 			'content' => array( array( 'type' => 'text', 'text' => wp_json_encode( $result ) ) ),
 			'isError' => false,
 		);
+	}
+
+	public static function authorize_object( $name, array $args, array $tool, $wp_user_id ) {
+		$post_id = isset( $args['post_id'] ) ? (int) $args['post_id'] : 0;
+		if ( 'wp_restore_revision' === $name && isset( $args['revision_id'] ) ) {
+			$revision = wp_get_post_revision( (int) $args['revision_id'] );
+			$post_id  = $revision ? (int) $revision->post_parent : 0;
+		}
+		if ( $post_id && ! user_can( $wp_user_id, $tool['read_only'] ? 'read_post' : 'edit_post', $post_id ) ) {
+			return sprintf( 'The authorizing WordPress user is not allowed to %s post %d.', $tool['read_only'] ? 'read' : 'edit', $post_id );
+		}
+		return '';
 	}
 
 	private static function tool_error( $message ) {
