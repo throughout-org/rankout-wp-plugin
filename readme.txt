@@ -4,7 +4,7 @@ Tags: seo, rankout, mcp, oauth
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.0.0
+Stable tag: 1.0.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -31,6 +31,13 @@ RankOut requests only the permissions it needs for the feature you're using. Eve
 3. In RankOut, go to the client's Data Sources page and choose "Connect WordPress" — you'll be redirected here to approve the connection.
 
 == Changelog ==
+
+= 1.0.4 =
+* Validate MCP tool arguments against the advertised schemas.
+* Restrict OAuth callbacks to exact approved redirect URIs.
+* Re-check WordPress and object capabilities when tools execute.
+* Verify supported writes by reading persisted values back.
+* Reject unsupported product/meta writes and report no-op updates as failures.
 
 = 1.0.0 =
 * Initial release: OAuth 2.1 + PKCE authorization server, MCP tool endpoint, content/SEO/site-health/history tools.

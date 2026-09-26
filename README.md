@@ -5,6 +5,32 @@ contract RankOut's backend already expects — see
 `backend/modules/integrations/wpConnector/wpConnectorOAuth.service.ts` and
 `wpConnector.service.ts` for the client side of this protocol.
 
+## OAuth callback configuration
+
+The production RankOut callback is allowed by default. Staging and local
+dashboards must register their exact callback URI in `wp-config.php` before
+connecting:
+
+```php
+define( 'RANKOUT_CONNECTOR_ALLOWED_REDIRECT_URIS', array(
+	'https://staging-api.example.com/api/wordpress-connector/callback',
+	'http://localhost:3001/api/wordpress-connector/callback',
+) );
+```
+
+Authorization uses exact URI matching. Existing access and refresh tokens are
+unaffected by this setting.
+
+Generic public custom-field writes are disabled by default. Sites that need a
+specific non-SEO custom field may opt in exact keys (posts/pages only):
+
+```php
+define( 'RANKOUT_CONNECTOR_ALLOWED_PUBLIC_META_KEYS', array( 'my_public_seo_field' ) );
+```
+
+WooCommerce products and protected metadata remain unavailable through the
+generic metadata tools.
+
 ## What it implements
 
 - **OAuth 2.1 + PKCE authorization server**, scoped per this plugin instance
