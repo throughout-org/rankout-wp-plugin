@@ -76,14 +76,20 @@ class RankOut_Connector_MCP_Server {
 			foreach ( $message as $single ) {
 				$result = self::dispatch( $single, $token_row );
 				if ( null !== $result ) {
-					$responses[] = $result;
+					// dispatch() returns WP_REST_Response so single requests can
+					// preserve their status. A JSON-RPC batch must contain the
+					// response bodies, not serialized WP_REST_Response objects.
+					$responses[] = $result instanceof WP_REST_Response ? $result->get_data() : $result;
 				}
 			}
 			return empty( $responses ) ? new WP_REST_Response( null, 202 ) : new WP_REST_Response( $responses, 200 );
 		}
 
 		$result = self::dispatch( is_array( $message ) ? $message : array(), $token_row );
-		return null === $result ? new WP_REST_Response( null, 202 ) : new WP_REST_Response( $result, 200 );
+		// Do not wrap a WP_REST_Response in another WP_REST_Response. Doing
+		// so serializes it as {data,headers,status} and hides the required
+		// top-level JSON-RPC envelope from MCP clients.
+		return null === $result ? new WP_REST_Response( null, 202 ) : $result;
 	}
 
 	private static function is_list( $value ) {

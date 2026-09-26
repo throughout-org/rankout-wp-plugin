@@ -1,6 +1,7 @@
 <?php
 define( 'ABSPATH', __DIR__ . '/' );
 define( 'RANKOUT_CONNECTOR_CLIENT_ID', 'rankout-dashboard' );
+define( 'RANKOUT_CONNECTOR_VERSION', '1.0.4' );
 function add_action() {}
 function apply_filters( $name, $value ) { return $value; }
 function esc_url_raw( $value ) { return $value; }
@@ -12,6 +13,21 @@ function get_post( $id ) { return (object) array( 'ID' => $id, 'post_type' => 99
 function update_post_meta() { return true; }
 function get_post_meta( $post_id, $key = '', $single = false ) { return $key ? '' : array(); }
 class WP_Error { public $code; public function __construct( $code ) { $this->code = $code; } }
+class WP_REST_Response {
+	private $data;
+	private $status;
+	public function __construct( $data = null, $status = 200 ) { $this->data = $data; $this->status = $status; }
+	public function get_data() { return $this->data; }
+	public function get_status() { return $this->status; }
+}
+class WP_REST_Request {
+	private $body;
+	private $params = array();
+	public function __construct( $body = '' ) { $this->body = $body; }
+	public function get_body() { return $this->body; }
+	public function get_param( $name ) { return $this->params[ $name ] ?? null; }
+	public function set_param( $name, $value ) { $this->params[ $name ] = $value; }
+}
 function is_wp_error( $value ) { return $value instanceof WP_Error; }
 $test_admin = true;
 $test_edit = true;
@@ -61,6 +77,13 @@ $test_admin = true;
 $test_edit = false;
 check( false !== strpos( RankOut_Connector_MCP_Server::authorize_object( 'wp_update_page', array( 'post_id' => 1 ), array( 'read_only' => false ), 7 ), 'not allowed' ), 'object edit capability was not enforced' );
 $test_edit = true;
+
+$initialize = new WP_REST_Request( wp_json_encode( array( 'jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => array() ) ) );
+$initialize->set_param( '_rankout_token_row', array( 'scope' => array(), 'wp_user_id' => 7 ) );
+$initialize_response = RankOut_Connector_MCP_Server::handle_post( $initialize );
+check( $initialize_response instanceof WP_REST_Response, 'MCP initialize did not return a REST response' );
+check( isset( $initialize_response->get_data()['jsonrpc'] ), 'MCP JSON-RPC envelope was double-wrapped below a data property' );
+check( '1.0.4' === $initialize_response->get_data()['result']['serverInfo']['version'], 'MCP initialize reported the wrong connector version' );
 
 check( throws_message( function () { RankOut_Connector_Tools_Content::get_post_meta( array( 'post_id' => 99 ) ); }, 'limited to WordPress posts and pages' ), 'WooCommerce product meta was exposed by generic tool' );
 check( throws_message( function () { RankOut_Connector_Tools_Content::update_post_meta( array( 'post_id' => 1, 'meta' => array( 'total_sales' => 500 ) ) ); }, 'allowlist' ), 'unapproved public meta key accepted' );
