@@ -220,6 +220,20 @@ class RankOut_Connector_Tools_History {
 		if ( ! in_array( $tool_name, array( 'wp_update_post', 'wp_update_page' ), true ) || empty( $args['post_id'] ) ) {
 			return null;
 		}
+		$post = get_post( (int) $args['post_id'] );
+		if ( $post ) {
+			$field_map = array( 'title' => 'post_title', 'content' => 'post_content', 'excerpt' => 'post_excerpt' );
+			$has_change = false;
+			foreach ( $field_map as $argument => $property ) {
+				if ( array_key_exists( $argument, $args ) && (string) $args[ $argument ] !== (string) $post->{$property} ) {
+					$has_change = true;
+					break;
+				}
+			}
+			if ( ! $has_change ) {
+				return null;
+			}
+		}
 		$revision_id = wp_save_post_revision( (int) $args['post_id'] );
 		return ( $revision_id && ! is_wp_error( $revision_id ) ) ? (int) $revision_id : null;
 	}
@@ -237,6 +251,11 @@ class RankOut_Connector_Tools_History {
 		}
 		$after_snapshot = self::capture_snapshot( $tool_name, $args );
 		$revision_id    = $pre_write_revision_id;
+		// An identical retry is a successful no-op, not another external
+		// change. Do not create a second audit event for the same state.
+		if ( $before_snapshot === $after_snapshot ) {
+			return;
+		}
 
 		global $wpdb;
 		$wpdb->insert(

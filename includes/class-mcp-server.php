@@ -194,7 +194,11 @@ class RankOut_Connector_MCP_Server {
 	public static function authorize_object( $name, array $args, array $tool, $wp_user_id ) {
 		$post_id = isset( $args['post_id'] ) ? (int) $args['post_id'] : 0;
 		if ( 'wp_restore_revision' === $name && isset( $args['revision_id'] ) ) {
-			$revision = wp_get_post_revision( (int) $args['revision_id'] );
+			// WordPress 7.1's wp_get_post_revision() passes its argument on to
+			// get_post() by reference. PHP cannot pass a cast expression by
+			// reference, so keep the normalized id in a variable first.
+			$revision_id = (int) $args['revision_id'];
+			$revision = wp_get_post_revision( $revision_id );
 			$post_id  = $revision ? (int) $revision->post_parent : 0;
 		}
 		if ( $post_id && ! user_can( $wp_user_id, $tool['read_only'] ? 'read_post' : 'edit_post', $post_id ) ) {

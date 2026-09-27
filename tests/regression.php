@@ -9,7 +9,9 @@ function wp_parse_url( $value ) { return parse_url( $value ); }
 function sanitize_key( $value ) { return strtolower( preg_replace( '/[^a-zA-Z0-9_\-]/', '', $value ) ); }
 function is_protected_meta( $key ) { return 0 === strpos( $key, '_' ); }
 function wp_json_encode( $value ) { return json_encode( $value ); }
-function get_post( $id ) { return (object) array( 'ID' => $id, 'post_type' => 99 === $id ? 'product' : 'page' ); }
+function get_post( $id ) { return (object) array( 'ID' => $id, 'post_type' => 99 === $id ? 'product' : 'page', 'post_title' => 'Existing', 'post_content' => 'Body', 'post_excerpt' => 'Excerpt' ); }
+function wp_get_post_revision( &$id ) { return (object) array( 'post_parent' => 1 ); }
+function wp_save_post_revision() { return 123; }
 function update_post_meta() { return true; }
 function get_post_meta( $post_id, $key = '', $single = false ) { return $key ? '' : array(); }
 class WP_Error { public $code; public function __construct( $code ) { $this->code = $code; } }
@@ -40,6 +42,7 @@ require_once dirname( __DIR__ ) . '/includes/class-consent-screen.php';
 require_once dirname( __DIR__ ) . '/includes/class-auth.php';
 require_once dirname( __DIR__ ) . '/includes/class-mcp-server.php';
 require_once dirname( __DIR__ ) . '/includes/tools/class-tools-content.php';
+require_once dirname( __DIR__ ) . '/includes/tools/class-tools-history.php';
 require_once dirname( __DIR__ ) . '/includes/tools/class-tools-seo.php';
 
 $failures = 0;
@@ -77,6 +80,9 @@ $test_admin = true;
 $test_edit = false;
 check( false !== strpos( RankOut_Connector_MCP_Server::authorize_object( 'wp_update_page', array( 'post_id' => 1 ), array( 'read_only' => false ), 7 ), 'not allowed' ), 'object edit capability was not enforced' );
 $test_edit = true;
+check( '' === RankOut_Connector_MCP_Server::authorize_object( 'wp_restore_revision', array( 'revision_id' => 123 ), array( 'read_only' => false ), 7 ), 'revision authorization failed for an editable parent post' );
+check( null === RankOut_Connector_Tools_History::capture_pre_write_revision( 'wp_update_page', array( 'post_id' => 1, 'title' => 'Existing' ) ), 'identical retry created a pre-write revision' );
+check( 123 === RankOut_Connector_Tools_History::capture_pre_write_revision( 'wp_update_page', array( 'post_id' => 1, 'title' => 'Changed' ) ), 'real content change did not create a pre-write revision' );
 
 $initialize = new WP_REST_Request( wp_json_encode( array( 'jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => array() ) ) );
 $initialize->set_param( '_rankout_token_row', array( 'scope' => array(), 'wp_user_id' => 7 ) );
