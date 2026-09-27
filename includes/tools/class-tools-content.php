@@ -220,9 +220,25 @@ class RankOut_Connector_Tools_Content {
 		);
 	}
 
+	// Enforced here — not just in the AI's system prompt — so a direct
+	// external MCP client calling wp_update_post/wp_update_page can never
+	// bypass this by skipping wp_detect_editor first. Title/excerpt-only
+	// requests are unaffected; only an attempt to change `content` on a
+	// post whose builder owns the rendered body is refused.
+	private static function assert_content_edit_allowed( $post_id, array $args ) {
+		if ( ! array_key_exists( 'content', $args ) ) {
+			return;
+		}
+		$capabilities = RankOut_Connector_Editor_Detection::detect( $post_id );
+		if ( ! $capabilities['canSafelyEditContent'] ) {
+			throw new RuntimeException( $capabilities['reasonIfUnsupported'] ?: 'This post\'s content cannot be safely edited through this tool.' );
+		}
+	}
+
 	private static function update_content( array $args, $expected_type ) {
 		$post_id = (int) ( $args['post_id'] ?? 0 );
 		self::require_post( $post_id, $expected_type );
+		self::assert_content_edit_allowed( $post_id, $args );
 
 		$update = array( 'ID' => $post_id );
 		foreach ( array( 'title' => 'post_title', 'content' => 'post_content', 'excerpt' => 'post_excerpt' ) as $arg_key => $field ) {
