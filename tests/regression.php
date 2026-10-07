@@ -9,11 +9,34 @@ function wp_parse_url( $value ) { return parse_url( $value ); }
 function sanitize_key( $value ) { return strtolower( preg_replace( '/[^a-zA-Z0-9_\-]/', '', $value ) ); }
 function is_protected_meta( $key ) { return 0 === strpos( $key, '_' ); }
 function wp_json_encode( $value ) { return json_encode( $value ); }
-function get_post( $id ) { return (object) array( 'ID' => $id, 'post_type' => 99 === $id ? 'product' : 'page', 'post_title' => 'Existing', 'post_content' => 'Body', 'post_excerpt' => 'Excerpt' ); }
+$test_posts = array();
+$test_meta = array();
+function get_post( $id ) { global $test_posts; if ( isset( $test_posts[ $id ] ) ) { return $test_posts[ $id ]; } return (object) array( 'ID' => $id, 'post_type' => 99 === $id ? 'product' : 'page', 'post_title' => 'Existing', 'post_content' => 'Body', 'post_excerpt' => 'Excerpt' ); }
 function wp_get_post_revision( &$id ) { return (object) array( 'post_parent' => 1 ); }
 function wp_save_post_revision() { return 123; }
 function update_post_meta() { return true; }
-function get_post_meta( $post_id, $key = '', $single = false ) { return $key ? '' : array(); }
+function get_post_meta( $post_id, $key = '', $single = false ) { global $test_meta; if ( $key ) { return $test_meta[ $post_id ][ $key ] ?? ''; } return array(); }
+function sanitize_title( $value ) { return trim( preg_replace( '/[^a-z0-9]+/', '-', strtolower( $value ) ), '-' ); }
+function wp_slash( $value ) { return $value; }
+function get_permalink( $post ) { return 'https://example.com/?p=' . ( is_object( $post ) ? $post->ID : $post ); }
+function admin_url( $path ) { return 'https://example.com/wp-admin/' . $path; }
+$test_slug_matches = array();
+function get_posts( $args ) { global $test_slug_matches; return $test_slug_matches; }
+$test_inserted = null;
+$test_insert_filter = null;
+function wp_insert_post( $data ) {
+	global $test_inserted, $test_posts, $test_meta, $test_insert_filter;
+	$test_inserted = $data;
+	$id = 500;
+	$content = $test_insert_filter ? call_user_func( $test_insert_filter, $data['post_content'] ) : $data['post_content'];
+	$test_posts[ $id ] = (object) array( 'ID' => $id, 'post_type' => $data['post_type'], 'post_status' => $data['post_status'], 'post_title' => $data['post_title'], 'post_name' => $data['post_name'], 'post_content' => $content, 'post_excerpt' => $data['post_excerpt'], 'post_parent' => $data['post_parent'], 'post_author' => $data['post_author'] );
+	$test_meta[ $id ] = $data['meta_input'];
+	return $id;
+}
+$test_deleted = array();
+function wp_delete_post( $id ) { global $test_deleted, $test_posts; $test_deleted[] = $id; unset( $test_posts[ $id ] ); return true; }
+$test_trashed = array();
+function wp_trash_post( $id ) { global $test_trashed; $test_trashed[] = $id; return true; }
 class WP_Error { public $code; public function __construct( $code ) { $this->code = $code; } }
 class WP_REST_Response {
 	private $data;
@@ -34,7 +57,8 @@ function is_wp_error( $value ) { return $value instanceof WP_Error; }
 $test_admin = true;
 $test_edit = true;
 function get_userdata( $id ) { return $id ? (object) array( 'ID' => $id ) : false; }
-function user_can( $id, $capability ) { global $test_admin, $test_edit; return 'manage_options' === $capability ? $test_admin : $test_edit; }
+$test_denied_caps = array();
+function user_can( $id, $capability ) { global $test_admin, $test_edit, $test_denied_caps; if ( in_array( $capability, $test_denied_caps, true ) ) { return false; } return 'manage_options' === $capability ? $test_admin : $test_edit; }
 
 require_once dirname( __DIR__ ) . '/includes/class-schema-validator.php';
 require_once dirname( __DIR__ ) . '/includes/class-tool-registry.php';
@@ -42,6 +66,7 @@ require_once dirname( __DIR__ ) . '/includes/class-consent-screen.php';
 require_once dirname( __DIR__ ) . '/includes/class-auth.php';
 require_once dirname( __DIR__ ) . '/includes/class-mcp-server.php';
 require_once dirname( __DIR__ ) . '/includes/tools/class-tools-content.php';
+require_once dirname( __DIR__ ) . '/includes/tools/class-tools-create.php';
 require_once dirname( __DIR__ ) . '/includes/tools/class-tools-history.php';
 require_once dirname( __DIR__ ) . '/includes/tools/class-tools-seo.php';
 
@@ -96,6 +121,47 @@ check( throws_message( function () { RankOut_Connector_Tools_Content::update_pos
 check( throws_message( function () { RankOut_Connector_Tools_SEO::yoast_update( array( 'post_id' => 1 ) ); }, 'at least one supported SEO field' ), 'empty SEO write reported success' );
 check( throws_message( function () { RankOut_Connector_Tools_SEO::yoast_update( array( 'post_id' => 1, 'meta_description' => 'wrong key' ) ); }, 'at least one supported SEO field' ), 'meta_description mismatch reported success' );
 check( throws_message( function () { RankOut_Connector_Tools_SEO::yoast_update( array( 'post_id' => 1, 'description' => 'Expected' ) ); }, 'did not persist' ), 'failed SEO read-back reported success' );
+
+// Draft creation (class-tools-create.php).
+check( throws_message( function () { RankOut_Connector_Tools_Create::create( array( 'title' => 'T', 'slug' => '!!!' ), 'page', 7 ); }, 'slug must contain' ), 'empty slug accepted' );
+check( throws_message( function () { RankOut_Connector_Tools_Create::create( array( 'title' => '  ', 'slug' => 'a' ), 'page', 7 ); }, 'title must not be empty' ), 'empty title accepted' );
+$created = RankOut_Connector_Tools_Create::create( array( 'title' => 'Best Curly Hair Products', 'slug' => 'Best Curly Hair Products', 'content' => '<p>Body</p>' ), 'page', 7 );
+check( 'draft' === $test_inserted['post_status'], 'create did not force draft status' );
+check( 7 === $test_inserted['post_author'], 'create did not attribute the draft to the authorizing user' );
+check( 'best-curly-hair-products' === $test_inserted['post_name'], 'create did not sanitize the slug' );
+check( ! empty( $test_inserted['meta_input'][ RankOut_Connector_Tools_Create::CREATED_META_KEY ] ), 'create did not mark the draft as RankOut-created' );
+check( 500 === $created['post_id'] && false === $created['already_existed'] && 'draft' === $created['status'], 'create returned the wrong result' );
+check( false !== strpos( $created['edit_link'], 'post=500' ), 'create did not return an edit link' );
+
+$test_slug_matches = array( $test_posts[500] );
+$retry = RankOut_Connector_Tools_Create::create( array( 'title' => 'Best Curly Hair Products', 'slug' => 'best-curly-hair-products', 'content' => '<p>Body</p>' ), 'page', 7 );
+check( true === $retry['already_existed'] && 500 === $retry['post_id'], 'identical retry was not treated as a no-op' );
+check( throws_message( function () { RankOut_Connector_Tools_Create::create( array( 'title' => 'Different', 'slug' => 'best-curly-hair-products' ), 'page', 7 ); }, 'already used' ), 'create duplicated an existing slug' );
+$test_slug_matches = array( (object) array( 'ID' => 42, 'post_type' => 'page', 'post_status' => 'publish', 'post_title' => 'Human page', 'post_content' => '', 'post_excerpt' => '', 'post_parent' => 0 ) );
+check( throws_message( function () { RankOut_Connector_Tools_Create::create( array( 'title' => 'Human page', 'slug' => 'human-page' ), 'page', 7 ); }, 'already used by page 42' ), 'create reused a human-made page slug' );
+$test_slug_matches = array();
+
+$test_insert_filter = function ( $content ) { return str_replace( '<script>x</script>', '', $content ); };
+$test_posts = array();
+check( throws_message( function () { RankOut_Connector_Tools_Create::create( array( 'title' => 'Filtered', 'slug' => 'filtered', 'content' => '<p>a</p><script>x</script>' ), 'post', 7 ); }, 'was not kept' ), 'filtered content was reported as created' );
+check( in_array( 500, $test_deleted, true ), 'a draft whose content was filtered was left behind' );
+$test_insert_filter = null;
+
+$test_posts[600] = (object) array( 'ID' => 600, 'post_type' => 'page', 'post_status' => 'draft' );
+check( throws_message( function () { RankOut_Connector_Tools_Create::trash_created( array( 'post_id' => 600 ) ); }, 'not created by RankOut' ), 'trash accepted content RankOut did not create' );
+$test_meta[600] = array( RankOut_Connector_Tools_Create::CREATED_META_KEY => '2026-10-07T00:00:00+00:00' );
+$test_posts[600]->post_status = 'publish';
+check( throws_message( function () { RankOut_Connector_Tools_Create::trash_created( array( 'post_id' => 600 ) ); }, 'not a draft' ), 'trash removed a published page' );
+$test_posts[600]->post_status = 'draft';
+$trashed = RankOut_Connector_Tools_Create::trash_created( array( 'post_id' => 600 ) );
+check( true === $trashed['trashed'] && in_array( 600, $test_trashed, true ), 'trash did not trash a RankOut-created draft' );
+
+$test_denied_caps = array( 'edit_pages' );
+check( false !== strpos( RankOut_Connector_MCP_Server::authorize_object( 'wp_create_page', array( 'title' => 'T', 'slug' => 't' ), array( 'read_only' => false ), 7 ), 'not allowed to create pages' ), 'page create capability was not enforced' );
+check( '' === RankOut_Connector_MCP_Server::authorize_object( 'wp_create_post', array( 'title' => 'T', 'slug' => 't' ), array( 'read_only' => false ), 7 ), 'post create was blocked by an unrelated page capability' );
+$test_denied_caps = array( 'delete_post' );
+check( false !== strpos( RankOut_Connector_MCP_Server::authorize_object( 'wp_trash_created_post', array( 'post_id' => 600 ), array( 'read_only' => false ), 7 ), 'not allowed to delete' ), 'trash delete capability was not enforced' );
+$test_denied_caps = array();
 
 if ( $failures ) { exit( 1 ); }
 echo "Connector P0 regressions passed.\n";

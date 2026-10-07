@@ -31,6 +31,8 @@ class RankOut_Connector_Tools_History {
 		'wp_rm_update_post_seo'     => 'wp_rm_get_post_seo',
 		'wp_update_post'            => 'wp_get_post',
 		'wp_update_page'            => 'wp_get_page',
+		'wp_create_post'            => 'wp_get_post',
+		'wp_create_page'            => 'wp_get_page',
 	);
 
 	public static function register() {
@@ -246,10 +248,22 @@ class RankOut_Connector_Tools_History {
 	 * that method for why this can't be resolved after the fact.
 	 */
 	public static function record( $tool_name, array $args, array $before_snapshot, array $write_result, $wp_user_id, $pre_write_revision_id = null ) {
+		// A create has no post_id until it runs — take it from the result.
+		// An identical retry returned the existing draft without writing
+		// anything, so there's nothing new to log.
+		if ( RankOut_Connector_Tools_Create::is_create_tool( $tool_name ) ) {
+			if ( ! empty( $write_result['already_existed'] ) || empty( $write_result['post_id'] ) ) {
+				return;
+			}
+			$args['post_id'] = (int) $write_result['post_id'];
+		}
 		if ( empty( $args['post_id'] ) ) {
 			return;
 		}
 		$after_snapshot = self::capture_snapshot( $tool_name, $args );
+		if ( 'wp_trash_created_post' === $tool_name ) {
+			$after_snapshot = $write_result;
+		}
 		$revision_id    = $pre_write_revision_id;
 		// An identical retry is a successful no-op, not another external
 		// change. Do not create a second audit event for the same state.
