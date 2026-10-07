@@ -204,6 +204,18 @@ class RankOut_Connector_MCP_Server {
 		if ( $post_id && ! user_can( $wp_user_id, $tool['read_only'] ? 'read_post' : 'edit_post', $post_id ) ) {
 			return sprintf( 'The authorizing WordPress user is not allowed to %s post %d.', $tool['read_only'] ? 'read' : 'edit', $post_id );
 		}
+		if ( 'wp_trash_created_post' === $name && $post_id && ! user_can( $wp_user_id, 'delete_post', $post_id ) ) {
+			return sprintf( 'The authorizing WordPress user is not allowed to delete post %d.', $post_id );
+		}
+		// Creates carry no post_id to check against, so check the
+		// type-level capability instead.
+		$create_capability = array( 'wp_create_post' => 'edit_posts', 'wp_create_page' => 'edit_pages' );
+		if ( isset( $create_capability[ $name ] ) && ! user_can( $wp_user_id, $create_capability[ $name ] ) ) {
+			return sprintf( 'The authorizing WordPress user is not allowed to create %ss.', 'wp_create_page' === $name ? 'page' : 'post' );
+		}
+		if ( 'wp_create_page' === $name && ! empty( $args['parent_id'] ) && ! user_can( $wp_user_id, 'edit_post', (int) $args['parent_id'] ) ) {
+			return sprintf( 'The authorizing WordPress user is not allowed to edit parent page %d.', (int) $args['parent_id'] );
+		}
 		return '';
 	}
 

@@ -56,6 +56,12 @@ generic metadata tools.
   `wp_aioseo_update_post_seo`, `wp_rm_get_post_seo`, `wp_rm_update_post_seo`,
   `wp_get_site_health`, `wp_seo_audit_site`, `wp_history_list`,
   `wp_history_get`, `wp_history_diff`, `wp_restore_revision`.
+- **Draft creation** (`includes/tools/class-tools-create.php`):
+  `wp_search_posts` (read), `wp_create_post` / `wp_create_page` (always
+  `draft`, `slug` required and must be unused; an identical retry returns
+  the existing draft), and `wp_trash_created_post` (the undo — refuses
+  anything this plugin didn't create or that is no longer a draft).
+  Nothing here can publish; that stays a human action in wp-admin.
 - Every write is logged (before/after snapshot + the WP core revision id,
   when one exists) to a custom table, visible under
   **Settings → RankOut Connector**, where the site admin can also revoke
