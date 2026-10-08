@@ -3,7 +3,7 @@
  * Plugin Name:       RankOut Connector
  * Plugin URI:         https://rankout.app
  * Description:        Connects this WordPress site to RankOut so approved SEO/AEO/GEO fixes can be reviewed and applied automatically. Exposes an OAuth 2.1 + PKCE authorization server and an MCP tool endpoint scoped to exactly what RankOut is granted.
- * Version:             1.1.0
+ * Version:             1.2.0
  * Requires at least:  6.0
  * Requires PHP:        7.4
  * Author:              RankOut
@@ -39,7 +39,7 @@ if ( isset( $_SERVER['REQUEST_URI'] ) && (
 	}
 }
 
-define( 'RANKOUT_CONNECTOR_VERSION', '1.1.0' );
+define( 'RANKOUT_CONNECTOR_VERSION', '1.2.0' );
 define( 'RANKOUT_CONNECTOR_FILE', __FILE__ );
 define( 'RANKOUT_CONNECTOR_DIR', plugin_dir_path( __FILE__ ) );
 // The fixed REST namespace every discovery document, OAuth endpoint, and
@@ -58,6 +58,7 @@ require_once RANKOUT_CONNECTOR_DIR . 'includes/class-oauth-server.php';
 require_once RANKOUT_CONNECTOR_DIR . 'includes/class-consent-screen.php';
 require_once RANKOUT_CONNECTOR_DIR . 'includes/class-tool-registry.php';
 require_once RANKOUT_CONNECTOR_DIR . 'includes/class-schema-validator.php';
+require_once RANKOUT_CONNECTOR_DIR . 'includes/class-schema-renderer.php';
 // Loaded before any tools/class-tools-*.php file — class-tools-content.php's
 // write handlers call this at write time, and class-tools-editor.php
 // registers the read-only tool that reports the same thing to the AI.
@@ -68,6 +69,7 @@ require_once RANKOUT_CONNECTOR_DIR . 'includes/class-updater.php';
 require_once RANKOUT_CONNECTOR_DIR . 'includes/tools/class-tools-content.php';
 require_once RANKOUT_CONNECTOR_DIR . 'includes/tools/class-tools-create.php';
 require_once RANKOUT_CONNECTOR_DIR . 'includes/tools/class-tools-editor.php';
+require_once RANKOUT_CONNECTOR_DIR . 'includes/tools/class-tools-schema.php';
 require_once RANKOUT_CONNECTOR_DIR . 'includes/tools/class-tools-seo.php';
 require_once RANKOUT_CONNECTOR_DIR . 'includes/tools/class-tools-site-health.php';
 require_once RANKOUT_CONNECTOR_DIR . 'includes/tools/class-tools-history.php';
@@ -117,6 +119,7 @@ function rankout_connector_bootstrap() {
 	RankOut_Connector_OAuth_Server::init();
 	RankOut_Connector_Consent_Screen::init();
 	RankOut_Connector_MCP_Server::init();
+	RankOut_Connector_Schema_Renderer::init();
 	RankOut_Connector_Admin_Page::init();
 	RankOut_Connector_Updater::init();
 }
