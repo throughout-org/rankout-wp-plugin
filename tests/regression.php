@@ -14,7 +14,10 @@ $test_meta = array();
 function get_post( $id ) { global $test_posts; if ( isset( $test_posts[ $id ] ) ) { return $test_posts[ $id ]; } return (object) array( 'ID' => $id, 'post_type' => 99 === $id ? 'product' : 'page', 'post_title' => 'Existing', 'post_content' => 'Body', 'post_excerpt' => 'Excerpt' ); }
 function wp_get_post_revision( &$id ) { return (object) array( 'post_parent' => 1 ); }
 function wp_save_post_revision() { return 123; }
-function update_post_meta() { return true; }
+function update_post_meta( $post_id, $key, $value ) { global $test_meta; $test_meta[ $post_id ][ $key ] = $value; return true; }
+$test_options = array();
+function get_option( $key, $default = false ) { global $test_options; return array_key_exists( $key, $test_options ) ? $test_options[ $key ] : $default; }
+function update_option( $key, $value ) { global $test_options; $test_options[ $key ] = $value; return true; }
 function get_post_meta( $post_id, $key = '', $single = false ) { global $test_meta; if ( $key ) { return $test_meta[ $post_id ][ $key ] ?? ''; } return array(); }
 function sanitize_title( $value ) { return trim( preg_replace( '/[^a-z0-9]+/', '-', strtolower( $value ) ), '-' ); }
 function wp_slash( $value ) { return $value; }
@@ -68,6 +71,7 @@ require_once dirname( __DIR__ ) . '/includes/class-mcp-server.php';
 require_once dirname( __DIR__ ) . '/includes/tools/class-tools-content.php';
 require_once dirname( __DIR__ ) . '/includes/tools/class-tools-create.php';
 require_once dirname( __DIR__ ) . '/includes/tools/class-tools-history.php';
+require_once dirname( __DIR__ ) . '/includes/tools/class-tools-schema.php';
 require_once dirname( __DIR__ ) . '/includes/tools/class-tools-seo.php';
 
 $failures = 0;
@@ -162,6 +166,35 @@ check( '' === RankOut_Connector_MCP_Server::authorize_object( 'wp_create_post', 
 $test_denied_caps = array( 'delete_post' );
 check( false !== strpos( RankOut_Connector_MCP_Server::authorize_object( 'wp_trash_created_post', array( 'post_id' => 600 ), array( 'read_only' => false ), 7 ), 'not allowed to delete' ), 'trash delete capability was not enforced' );
 $test_denied_caps = array();
+
+// Structured data (class-tools-schema.php).
+check( throws_message( function () { RankOut_Connector_Tools_Schema::update_post_schema( array( 'post_id' => 1, 'schema_type' => 'Article', 'json_ld' => array( '@type' => 'FAQPage', 'headline' => 'x' ) ) ); }, 'does not match schema_type' ), 'a json_ld @type contradicting schema_type was accepted' );
+check( throws_message( function () { RankOut_Connector_Tools_Schema::update_post_schema( array( 'post_id' => 1, 'schema_type' => 'Organization', 'json_ld' => array( 'name' => 'x' ) ) ); }, 'schema_type must be one of' ), 'a site-only schema_type was accepted on a post' );
+check( throws_message( function () { RankOut_Connector_Tools_Schema::update_site_schema( array( 'schema_type' => 'Article', 'json_ld' => array( 'headline' => 'x' ) ) ); }, 'schema_type must be one of' ), 'a post-only schema_type was accepted site-wide' );
+
+$article = RankOut_Connector_Tools_Schema::update_post_schema( array( 'post_id' => 1, 'schema_type' => 'Article', 'json_ld' => array( 'headline' => 'A post about curly hair' ) ) );
+check( 1 === count( $article['schema'] ) && 'https://schema.org' === $article['schema'][0]['@context'] && 'Article' === $article['schema'][0]['@type'], 'Article schema was not stored with a normalized @context/@type' );
+$faq = RankOut_Connector_Tools_Schema::update_post_schema( array( 'post_id' => 1, 'schema_type' => 'FAQPage', 'json_ld' => array( 'mainEntity' => array() ) ) );
+check( 2 === count( $faq['schema'] ), 'adding a second schema_type on the same post replaced the first instead of keeping both' );
+$replaced = RankOut_Connector_Tools_Schema::update_post_schema( array( 'post_id' => 1, 'schema_type' => 'Article', 'json_ld' => array( 'headline' => 'Updated headline' ) ) );
+check( 2 === count( $replaced['schema'] ), 're-adding the same schema_type appended instead of replacing it' );
+$headlines = array_column( $replaced['schema'], 'headline' );
+check( in_array( 'Updated headline', $headlines, true ) && ! in_array( 'A post about curly hair', $headlines, true ), 'replacing a schema_type kept the stale block' );
+
+$org = RankOut_Connector_Tools_Schema::update_site_schema( array( 'schema_type' => 'Organization', 'json_ld' => array( 'name' => 'Mullwood' ) ) );
+check( 1 === count( $org['schema'] ) && null === $org['active_seo_plugin'], 'site Organization schema was rejected with no SEO plugin active' );
+
+define( 'RANK_MATH_VERSION', '1.0' );
+check( throws_message( function () { RankOut_Connector_Tools_Schema::update_site_schema( array( 'schema_type' => 'Organization', 'json_ld' => array( 'name' => 'Mullwood' ) ) ); }, 'Rank Math SEO is active' ), 'site Organization schema was accepted while Rank Math is active' );
+check( throws_message( function () { RankOut_Connector_Tools_Schema::update_site_schema( array( 'schema_type' => 'WebSite', 'json_ld' => array( 'name' => 'Mullwood' ) ) ); }, 'Rank Math SEO is active' ), 'site WebSite schema was accepted while Rank Math is active' );
+$local = RankOut_Connector_Tools_Schema::update_site_schema( array( 'schema_type' => 'LocalBusiness', 'json_ld' => array( 'name' => 'Mullwood' ) ) );
+check( 2 === count( $local['schema'] ) && 'rankmath' === $local['active_seo_plugin'], 'LocalBusiness schema was blocked even though only Organization/WebSite should be' );
+check( 'rankmath' === RankOut_Connector_Tools_Schema::get_post_schema( array( 'post_id' => 1 ) )['active_seo_plugin'], 'get_post_schema did not report the active SEO plugin' );
+
+$test_admin = false;
+check( '' !== RankOut_Connector_MCP_Server::authorize_object( 'wp_update_site_schema', array( 'schema_type' => 'LocalBusiness' ), array( 'read_only' => false ), 7 ), 'site schema write was authorized for a non-admin' );
+$test_admin = true;
+check( '' === RankOut_Connector_MCP_Server::authorize_object( 'wp_update_site_schema', array( 'schema_type' => 'LocalBusiness' ), array( 'read_only' => false ), 7 ), 'site schema write was refused for an admin' );
 
 if ( $failures ) { exit( 1 ); }
 echo "Connector P0 regressions passed.\n";

@@ -33,6 +33,10 @@ class RankOut_Connector_Tools_History {
 		'wp_update_page'            => 'wp_get_page',
 		'wp_create_post'            => 'wp_get_post',
 		'wp_create_page'            => 'wp_get_page',
+		'wp_update_post_schema'     => 'wp_get_post_schema',
+		// wp_update_site_schema carries no post_id, so capture_snapshot's
+		// existing "no post_id => skip" guard already excludes it here —
+		// site-wide writes aren't logged to Recent Changes today.
 	);
 
 	public static function register() {

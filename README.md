@@ -62,22 +62,36 @@ generic metadata tools.
   the existing draft), and `wp_trash_created_post` (the undo — refuses
   anything this plugin didn't create or that is no longer a draft).
   Nothing here can publish; that stays a human action in wp-admin.
+- **Structured data** (`includes/tools/class-tools-schema.php`):
+  `wp_get_post_schema` / `wp_update_post_schema` (Article, FAQPage,
+  BreadcrumbList, Person, Product, Review, HowTo, Event, VideoObject,
+  Recipe — one block per type per post, upserted) and `wp_get_site_schema`
+  / `wp_update_site_schema` (Organization, WebSite, LocalBusiness — every
+  page). `wp_update_site_schema` refuses Organization/WebSite outright when
+  Yoast, Rank Math, or All in One SEO is active (they already generate
+  those automatically; a second one is a duplicate-identity problem, not a
+  harmless extra copy) — every read also reports which SEO plugin (if any)
+  is active so a post-level block can be judged the same way.
+  `includes/class-schema-renderer.php` prints every stored block as its own
+  `<script type="application/ld+json">` on `wp_footer`; writing one through
+  the tool has no front-end effect by itself.
 - Every write is logged (before/after snapshot + the WP core revision id,
   when one exists) to a custom table, visible under
   **Settings → RankOut Connector**, where the site admin can also revoke
-  access at any time.
+  access at any time. (`wp_update_site_schema` is the one exception — it
+  carries no post_id, which the history log is keyed on.)
 
 ## Deliberately not built yet
 
 `WORDPRESS_CONNECTOR_SCOPE`'s full vocabulary (`class-scopes.php`) declares
 scopes for media, taxonomies, plugin/theme listing, general settings,
-schema.org markup, GEO, AEO, and E-E-A-T — but no backend code calls a tool
-under those categories by name yet. Building tools for them now would be
-speculative; they're declared (so discovery/consent stay honest about what
-*might* be requested later) but intentionally have no implementation behind
-them until a real caller exists. Add the tool + flip its scope from
+GEO, AEO, and E-E-A-T — but no backend code calls a tool under those
+categories by name yet. Building tools for them now would be speculative;
+they're declared (so discovery/consent stay honest about what *might* be
+requested later) but intentionally have no implementation behind them
+until a real caller exists. Add the tool + flip its scope from
 declared-only to load-bearing in `class-tool-registry.php` the same way the
-existing 16 are wired.
+existing tools are wired.
 
 ## Local testing
 

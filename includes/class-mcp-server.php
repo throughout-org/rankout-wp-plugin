@@ -216,6 +216,12 @@ class RankOut_Connector_MCP_Server {
 		if ( 'wp_create_page' === $name && ! empty( $args['parent_id'] ) && ! user_can( $wp_user_id, 'edit_post', (int) $args['parent_id'] ) ) {
 			return sprintf( 'The authorizing WordPress user is not allowed to edit parent page %d.', (int) $args['parent_id'] );
 		}
+		// Site-wide schema carries no post_id — it affects every page, not
+		// one object a per-post capability check could cover, so this is
+		// the plugin's first write tool gated on manage_options instead.
+		if ( 'wp_update_site_schema' === $name && ! user_can( $wp_user_id, 'manage_options' ) ) {
+			return 'The authorizing WordPress user is not allowed to manage site-wide settings.';
+		}
 		return '';
 	}
 

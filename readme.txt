@@ -4,7 +4,7 @@ Tags: seo, rankout, mcp, oauth
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.1.0
+Stable tag: 1.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -16,6 +16,7 @@ RankOut Connector lets a RankOut agency account:
 
 * Read this site's content, on-page SEO fields (Yoast / All in One SEO / Rank Math, whichever is active), and basic site health.
 * Create a new post or page as a draft for you to review and publish — RankOut can never publish content itself.
+* Add structured data (schema.org JSON-LD) to a post/page or site-wide, so search engines and AI answers can understand what a page is about.
 * Apply a change to a post/page or its SEO fields, but only after your RankOut agency has explicitly approved it — this plugin never makes a change RankOut hasn't asked for by name, and every write it makes is logged under Settings → RankOut Connector → Recent changes.
 * Be disconnected at any time from Settings → RankOut Connector, with no need to go back to RankOut first.
 
@@ -32,6 +33,11 @@ RankOut requests only the permissions it needs for the feature you're using. Eve
 3. In RankOut, go to the client's Data Sources page and choose "Connect WordPress" — you'll be redirected here to approve the connection.
 
 == Changelog ==
+
+= 1.2.0 =
+* New: wp_get_post_schema / wp_update_post_schema add schema.org JSON-LD (Article, FAQPage, BreadcrumbList, Person, Product, Review, HowTo, Event, VideoObject, Recipe) to a post/page.
+* New: wp_get_site_schema / wp_update_site_schema add site-wide schema.org JSON-LD (Organization, WebSite, LocalBusiness), output on every page.
+* Safety: wp_update_site_schema refuses Organization/WebSite when Yoast, Rank Math, or All in One SEO is active — they already generate those automatically, and a second one is a duplicate-identity problem.
 
 = 1.1.0 =
 * New: wp_create_post / wp_create_page create new content as drafts only — publishing always stays a human action in wp-admin.
